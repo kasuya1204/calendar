@@ -1,0 +1,177 @@
+﻿<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>FullCalendar × Google Sheets</title>
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    #calendar { max-width: 800px; margin: 40px auto; }
+    form, .modal { max-width: 800px; margin: 0 auto 20px; }
+    .modal { display: none; border: 1px solid #ccc; padding: 20px; background: #f9f9f9; }
+    .modal.active { display: block; }
+  </style>
+</head>
+<body>
+
+  <h2>スケジュール追加フォーム</h2>
+  <form id="eventForm">
+    <input type="text" id="eventTitle" placeholder="タイトル" required>
+    <input type="datetime-local" id="eventStart" required>
+    <input type="datetime-local" id="eventEnd" required>
+    <select id="assignedTo" required>
+      <option value="">-- 担当者を選択 --</option>
+      <option value="田中">田中</option>
+      <option value="佐藤">佐藤</option>
+      <option value="鈴木">鈴木</option>
+    </select>
+    <button type="submit">追加</button>
+  </form>
+
+  <div id="calendar"></div>
+
+  <!-- 編集モーダル -->
+  <div class="modal" id="editModal">
+    <h3>イベント編集</h3>
+    <form id="editEventForm">
+      <input type="text" id="editTitle" required>
+      <input type="datetime-local" id="editStart" required>
+      <input type="datetime-local" id="editEnd" required>
+      <select id="editAssignedTo" required>
+        <option value="">-- 担当者を選択 --</option>
+        <option value="田中">田中</option>
+        <option value="佐藤">佐藤</option>
+        <option value="鈴木">鈴木</option>
+      </select>
+      <input type="hidden" id="editId">
+      <button type="submit">保存</button>
+      <button type="button" id="deleteEvent">削除</button>
+      <button type="button" onclick="closeModal()">キャンセル</button>
+    </form>
+  </div>
+
+  <script>
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbzrp3RRbRUggejaImfDF6PTfQayiaD6kyxKDFkFtLnruvi5OWxPsNX1MQwNB-MgA6IJAg/exec';  // ← ココにGASのURLを貼り付ける
+
+    const staffColors = {
+      '田中': '#1abc9c',
+      '佐藤': '#3498db',
+      '鈴木': '#e67e22'
+    };
+
+    const calendarEl = document.getElementById('calendar');
+    const calendar = new FullCalendar.Calendar(calendarEl, {
+      initialView: 'dayGridMonth',
+      editable: true,
+      selectable: true,
+      eventClick: function(info) {
+        openEditModal(info.event);
+      },
+      eventDrop: function(info) {
+        sendToGoogleSheet('update', info.event);
+      },
+      eventResize: function(info) {
+        sendToGoogleSheet('update', info.event);
+      },
+      eventAdd: function(info) {
+        sendToGoogleSheet('add', info.event);
+      },
+      eventChange: function(info) {
+        sendToGoogleSheet('update', info.event);
+      },
+      eventRemove: function(info) {
+        sendToGoogleSheet('delete', info.event);
+      }
+    });
+
+    calendar.render();
+
+    document.getElementById('eventForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const title = document.getElementById('eventTitle').value;
+      const start = document.getElementById('eventStart').value;
+      const end = document.getElementById('eventEnd').value;
+      const assignedTo = document.getElementById('assignedTo').value;
+      const id = crypto.randomUUID();
+      const color = staffColors[assignedTo] || '#95a5a6';
+
+      calendar.addEvent({
+        id,
+        title,
+        start,
+        end,
+        backgroundColor: color,
+        borderColor: color,
+        extendedProps: { assignedTo }
+      });
+
+      e.target.reset();
+    });
+
+    function sendToGoogleSheet(action, event) {
+      const data = {
+        action,
+        id: event.id,
+        title: event.title,
+        start: event.start.toISOString(),
+        end: event.end ? event.end.toISOString() : null,
+        assignedTo: event.extendedProps.assignedTo
+      };
+
+      fetch(GAS_URL, {
+        method: 'POST',
+        body: JSON.stringify(data),
+        headers: { 'Content-Type': 'application/json' }
+      })
+      .then(res => res.text())
+      .then(console.log)
+      .catch(console.error);
+    }
+
+    // 編集モーダル処理
+    function openEditModal(event) {
+      document.getElementById('editTitle').value = event.title;
+      document.getElementById('editStart').value = event.start.toISOString().slice(0,16);
+      document.getElementById('editEnd').value = event.end ? event.end.toISOString().slice(0,16) : '';
+      document.getElementById('editAssignedTo').value = event.extendedProps.assignedTo;
+      document.getElementById('editId').value = event.id;
+      document.getElementById('editModal').classList.add('active');
+    }
+
+    function closeModal() {
+      document.getElementById('editModal').classList.remove('active');
+    }
+
+    document.getElementById('editEventForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+
+      const id = document.getElementById('editId').value;
+      const title = document.getElementById('editTitle').value;
+      const start = document.getElementById('editStart').value;
+      const end = document.getElementById('editEnd').value;
+      const assignedTo = document.getElementById('editAssignedTo').value;
+      const color = staffColors[assignedTo] || '#95a5a6';
+
+      const event = calendar.getEventById(id);
+      event.setProp('title', title);
+      event.setStart(start);
+      event.setEnd(end);
+      event.setExtendedProp('assignedTo', assignedTo);
+      event.setProp('backgroundColor', color);
+      event.setProp('borderColor', color);
+
+      sendToGoogleSheet('update', event);
+      closeModal();
+    });
+
+    document.getElementById('deleteEvent').addEventListener('click', function() {
+      const id = document.getElementById('editId').value;
+      const event = calendar.getEventById(id);
+      event.remove();
+      closeModal();
+    });
+  </script>
+</body>
+</html>
+
