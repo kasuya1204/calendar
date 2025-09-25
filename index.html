@@ -85,6 +85,14 @@
       }
     });
 
+fetch(`https://script.google.com/macros/s/AKfycbzrp3RRbRUggejaImfDF6PTfQayiaD6kyxKDFkFtLnruvi5OWxPsNX1MQwNB-MgA6IJAg/exec`)
+  .then(res => res.json())
+  .then(events => {
+    events.forEach(event => calendar.addEvent(event));
+    calendar.render();
+  });
+
+
     calendar.render();
 
     document.getElementById('eventForm').addEventListener('submit', function(e) {
@@ -168,6 +176,7 @@
     document.getElementById('deleteEvent').addEventListener('click', function() {
       const id = document.getElementById('editId').value;
       const event = calendar.getEventById(id);
+　　　sendToGoogleSheet('delete', event); 
       event.remove();
       closeModal();
     });
